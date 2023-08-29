@@ -71,3 +71,4 @@ outs = backbone(rand_in)
 # 其中图片torch.Size([1, 576, 768])
 for name in outs:
     print(outs[name].size())
+name=name
