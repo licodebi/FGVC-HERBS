@@ -38,14 +38,19 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
             loss = F.cross_entropy(outs["layer"+str(i)].mean(1), labels)
             msg["train_loss/layer{}_loss".format(i)] = loss.item()
             total_loss += loss.item()
-
-            gt_score_map = outs["layer"+str(i)]
-            thres = torch.Tensor(thresholds["layer"+str(i)])
-            gt_score_map = suppression(gt_score_map, thres)
-            logit = F.log_softmax(outs["FPN1_layer" + str(i)] / args.temperature, dim=-1)
-            loss_b0 = nn.KLDivLoss()(logit, gt_score_map)
-            # 得到的是论文中的loss_r
-            msg["train_loss/layer{}_FPN1_loss".format(i)] = loss_b0.item()
+            gt_score_map = outs["layer"+str(i)].detach()
+            S = gt_score_map.size(1)
+            logit = outs["layer"+str(i)].view(-1, args.num_classes).contiguous()
+            loss_b0 = nn.CrossEntropyLoss()(logit,
+                                            labels.unsqueeze(1).repeat(1, S).flatten(0))
+            msg["train_loss/layer{}_loss0".format(i)] = loss_b0.item()
+            # gt_score_map = outs["layer"+str(i)]
+            # thres = torch.Tensor(thresholds["layer"+str(i)])
+            # gt_score_map = suppression(gt_score_map, thres)
+            # logit = F.log_softmax(outs["FPN1_layer" + str(i)] / args.temperature, dim=-1)
+            # loss_b0 = nn.KLDivLoss()(logit, gt_score_map)
+            # # 得到的是论文中的loss_r
+            # msg["train_loss/layer{}_FPN1_loss".format(i)] = loss_b0.item()
 
     # 如果使用选择器
     if args.use_selection:
@@ -163,7 +168,9 @@ def _cal_evalute_metric(corrects: dict,
 
 @torch.no_grad()
 def _average_top_k_result(corrects: dict, total_samples: dict, scores: list, labels: torch.Tensor, 
-    tops: list = [1, 2, 3, 4, 5, 6, 7, 8, 9]):
+    # tops: list = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    tops: list = [1, 2, 3, 4, 5]
+                          ):
     """
     scores is a list contain:
     [
@@ -242,8 +249,8 @@ def evaluate(args, model, test_loader):
                     this_name = "layer" + str(i)
                     _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
 
-                    this_name = "FPN1_layer" + str(i)
-                    _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
+                    # this_name = "FPN1_layer" + str(i)
+                    # _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
             
             ### for research
             if args.use_selection:

@@ -296,7 +296,78 @@ class WeaklySelector(nn.Module):
         # 返回选择器
         return selections
 
+class Vit_FPN(nn.Module):
+    def __init__(self, inputs: dict, fpn_size: int):
+        super(Vit_FPN, self).__init__()
+        scale_factors=[4.0,2.0,1.0,0.5]
+        inp_names = [name for name in inputs]
+        inp_name=inp_names[-1]
+        input=inputs[inp_name][:,1:,:]
+        dim=input.size(-1)
+        for idx,scale in enumerate(scale_factors):
+            if scale==4.0:
+                layers=[
+                    nn.ConvTranspose1d(dim,dim//2,kernel_size=2,stride=2),
+                    nn.BatchNorm1d(dim//2),
+                    nn.GELU(),
+                    nn.ConvTranspose1d(dim // 2, dim // 4, kernel_size=2, stride=2),
+                ]
+                out_dim = dim // 4
+                m = nn.Sequential(
+                    nn.Linear(out_dim, out_dim, 1),
+                    nn.ReLU(),
+                    nn.Linear(out_dim, fpn_size, 1)
+                )
+            elif scale == 2.0:
+                layers = [
+                    nn.ConvTranspose1d(dim, dim // 2, kernel_size=2, stride=2),
+                ]
+                out_dim = dim // 2
+                m = nn.Sequential(
+                    nn.Linear(out_dim, out_dim, 1),
+                    nn.ReLU(),
+                    nn.Linear(out_dim, fpn_size, 1)
+                )
+            elif scale == 1.0:
+                layers = []
+                out_dim = dim
+                m = nn.Sequential(
+                    nn.Linear(out_dim, out_dim, 1),
+                    nn.ReLU(),
+                    nn.Linear(out_dim, fpn_size, 1)
+                )
+            elif scale == 0.5:
+                layers = [nn.Conv1d(dim,dim*2,kernel_size=2,stride=2)]
+                out_dim = dim*2
+                m = nn.Sequential(
+                    nn.Linear(out_dim, out_dim, 1),
+                    nn.ReLU(),
+                    nn.Linear(out_dim, fpn_size, 1)
+                )
+            else:layers=[]
+            layers = nn.Sequential(*layers)
+            self.add_module(f"Up_layer{idx+1}", layers)
+            self.add_module(f"Proj_layer{idx+1}", m)
+    def forward(self, x):
+        # 得到最后一层特征图，去掉cls类
+        inp_names = [name for name in x]
+        inp_name = inp_names[-1]
+        input = x[inp_name][:, 1:, :]
+        input=input.transpose(1, 2).contiguous()
 
+        hs = []
+        outputs = {}
+        #遍历x,i为索引,name为对应的层号key
+        for i, name in enumerate(x):
+            #如果字符串 "FPN1_" 在 name 中存在
+            if "FPN1_" in name:
+                continue
+            # hs ['layer1', 'layer2', 'layer3', 'layer4']
+            hs.append(name)
+        for i in range(len(hs)):
+            name=hs[i]
+            outputs[f"layer{i+1}"]=getattr(self, "Proj_"+name)(getattr(self, "Up_"+name)(input).transpose(1, 2).contiguous())
+        return outputs
 class FPN(nn.Module):
     # upsample_type上采样类型
     # fpn_size=fpn大小
@@ -532,6 +603,7 @@ class PluginMoodel(nn.Module):
                  return_nodes: Union[dict, None],
                  img_size: int,
                  use_fpn: bool,
+                 use_vit_fpn: bool,
                  fpn_size: Union[int, None],
                  proj_type: str,
                  upsample_type: str,
@@ -625,8 +697,13 @@ class PluginMoodel(nn.Module):
         ### = = = = = FPN = = = = =
 
         self.use_fpn = use_fpn
+        self.use_vit_fpn=use_vit_fpn
         # 如果要使用fpn
-        if self.use_fpn:
+        if self.use_vit_fpn:
+            self.fpn_down=Vit_FPN(outs,fpn_size)
+            self.build_fpn_classifier_down(outs, fpn_size, num_classes)
+
+        elif self.use_fpn:
             # 设置fpn网络自顶向下融合特征
             # 输入backone中的输出特征，fpn_size，投影类型，上采样类型
             self.fpn_down = FPN(outs, fpn_size, proj_type, upsample_type)
@@ -701,6 +778,23 @@ class PluginMoodel(nn.Module):
 
     def forward_backbone(self, x):
         return self.backbone(x)
+    def fpn_predict_vit_down(self, x: dict, logits: dict):
+        """
+        x: [B, C, H, W] or [B, S, C]
+           [B, C, H, W] --> [B, H*W, C]
+        """
+        for name in x:
+            if "FPN1_" in name:
+                continue
+            ### predict on each features point
+            if len(x[name].size()) == 4:
+                B, C, H, W = x[name].size()
+                logit = x[name].view(B, C, H*W)
+            elif len(x[name].size()) == 3:
+                logit = x[name].transpose(1, 2).contiguous()
+            logits[name] = getattr(self, "fpn_classifier_down_" + name)(logit)
+            # [1, 2304, 200]
+            logits[name] = logits[name].transpose(1, 2).contiguous() # transpose
     # 将自上到下的fpn进行分类,通道数变为200
     def fpn_predict_down(self, x: dict, logits: dict):
         """
@@ -755,11 +849,12 @@ class PluginMoodel(nn.Module):
         logits = {}
         # x输入主干网络中得到每层的输出特征
         x = self.forward_backbone(x)
-
-
-
+        # 如果使用vit_fpn
+        if self.use_vit_fpn:
+            x=self.fpn_down(x)
+            self.fpn_predict_vit_down(x, logits)
         # 如果使用fpn
-        if self.use_fpn:
+        elif self.use_fpn:
             # 将经由主干网络输出的特征输入fpn
             # 此时的x为{'layer1':'特征1',...."FPN1_layer4":'特征8'}
             # "FPN1_"开头代表的是经过上采样之后得到的各层特征
@@ -776,7 +871,6 @@ class PluginMoodel(nn.Module):
         if self.use_selection:
             # 得到每层的经过选择器选择到的样本
             selects = self.selector(x, logits)
-
         # 使用聚合器
         if self.use_combiner:
             # 得到comb_outs=[B,200]

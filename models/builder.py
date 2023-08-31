@@ -46,7 +46,6 @@ def load_model_weights_vit(model, model_path):
     ### reference https://github.com/TACJu/TransFG
     ### thanks a lot.
     state = torch.load(model_path, map_location='cpu')
-    print("测试:",state.keys())
     for key in model.state_dict():
         if 'num_batches_tracked' in key:
             continue
@@ -103,6 +102,7 @@ def build_resnet50(pretrained: str = "./resnet50_miil_21k.pth",
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
+                                   use_vit_fpn=False,
                                    fpn_size = fpn_size,
                                    proj_type = proj_type,
                                    upsample_type = upsample_type,
@@ -154,6 +154,7 @@ def build_efficientnet(pretrained: bool = True,
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
+                                   use_vit_fpn=False,
                                    fpn_size = fpn_size,
                                    proj_type = proj_type,
                                    upsample_type = upsample_type,
@@ -166,11 +167,11 @@ def build_efficientnet(pretrained: bool = True,
 
 
 
-def build_vit16(pretrained: str = "./vit_base_patch16_224_in21k_miil.pth",
+def build_vit16(pretrained: str = "models/vit_base_patch16_224_in21k_miil.pth",
                 return_nodes: Union[dict, None] = None,
                 num_selects: Union[dict, None] = None, 
                 img_size: int = 448,
-                use_fpn: bool = True,
+                use_fpn: bool = False,
                 fpn_size: int = 512,
                 proj_type: str = "Linear",
                 upsample_type: str = "Conv",
@@ -239,6 +240,7 @@ def build_vit16(pretrained: str = "./vit_base_patch16_224_in21k_miil.pth",
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
+                                   use_vit_fpn=True,
                                    fpn_size = fpn_size,
                                    proj_type = proj_type,
                                    upsample_type = upsample_type,
@@ -295,6 +297,7 @@ def build_swintransformer(pretrained: bool = True,
                                    return_nodes = None,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
+                                   use_vit_fpn=False,
                                    fpn_size = fpn_size,
                                    proj_type = proj_type,
                                    upsample_type = upsample_type,
@@ -305,55 +308,55 @@ def build_swintransformer(pretrained: bool = True,
                                    comb_proj_size = comb_proj_size)
 
 
-def build_swintransformer2(pretrained: bool = True,
-                          num_selects: Union[dict, None] = None,
-                          img_size: int = 384,
-                          use_fpn: bool = True,
-                          fpn_size: int = 512,
-                          proj_type: str = "Linear",
-                          upsample_type: str = "Conv",
-                          use_selection: bool = True,
-                          num_classes: int = 200,
-                          use_combiner: bool = True,
-                          comb_proj_size: Union[int, None] = None):
-    """
-    This function is to building swin transformer. timm swin-transformer + torch.fx.proxy.Proxy
-    could cause error, so we set return_nodes to None and change swin-transformer model script to
-    return features directly.
-    Please check 'timm/models/swin_transformer.py' line 541 to see how to change model if your costom
-    model also fail at create_feature_extractor or get_graph_node_names step.
-    """
-
-    import timm
-    # 如果num_selects为空则每个层的通道数均为32
-    if num_selects is None:
-        num_selects = {
-            'layer1': 32,
-            'layer2': 32,
-            'layer3': 32,
-            'layer4': 32
-        }
-    # swin_base_patch4_window12_384_in22k
-    # 获取主干网络swin-transformer
-    backbone = timm.create_model('swin_large_patch4_window12_384_in22k', pretrained=pretrained)
-
-    # print(backbone)
-    # print(get_graph_node_names(backbone))
-    backbone.train()
-
-    print("Building...")
-    return new_pim_module.PluginMoodel(backbone=backbone,
-                                   return_nodes=None,
-                                   img_size=img_size,
-                                   use_fpn=use_fpn,
-                                   fpn_size=fpn_size,
-                                   proj_type=proj_type,
-                                   upsample_type=upsample_type,
-                                   use_selection=use_selection,
-                                   num_classes=num_classes,
-                                   num_selects=num_selects,
-                                   use_combiner=num_selects,
-                                   comb_proj_size=comb_proj_size)
+# def build_swintransformer2(pretrained: bool = True,
+#                           num_selects: Union[dict, None] = None,
+#                           img_size: int = 384,
+#                           use_fpn: bool = True,
+#                           fpn_size: int = 512,
+#                           proj_type: str = "Linear",
+#                           upsample_type: str = "Conv",
+#                           use_selection: bool = True,
+#                           num_classes: int = 200,
+#                           use_combiner: bool = True,
+#                           comb_proj_size: Union[int, None] = None):
+#     """
+#     This function is to building swin transformer. timm swin-transformer + torch.fx.proxy.Proxy
+#     could cause error, so we set return_nodes to None and change swin-transformer model script to
+#     return features directly.
+#     Please check 'timm/models/swin_transformer.py' line 541 to see how to change model if your costom
+#     model also fail at create_feature_extractor or get_graph_node_names step.
+#     """
+#
+#     import timm
+#     # 如果num_selects为空则每个层的通道数均为32
+#     if num_selects is None:
+#         num_selects = {
+#             'layer1': 32,
+#             'layer2': 32,
+#             'layer3': 32,
+#             'layer4': 32
+#         }
+#     # swin_base_patch4_window12_384_in22k
+#     # 获取主干网络swin-transformer
+#     backbone = timm.create_model('swin_large_patch4_window12_384_in22k', pretrained=pretrained)
+#
+#     # print(backbone)
+#     # print(get_graph_node_names(backbone))
+#     backbone.train()
+#
+#     print("Building...")
+#     return new_pim_module.PluginMoodel(backbone=backbone,
+#                                    return_nodes=None,
+#                                    img_size=img_size,
+#                                    use_fpn=use_fpn,
+#                                    fpn_size=fpn_size,
+#                                    proj_type=proj_type,
+#                                    upsample_type=upsample_type,
+#                                    use_selection=use_selection,
+#                                    num_classes=num_classes,
+#                                    num_selects=num_selects,
+#                                    use_combiner=num_selects,
+#                                    comb_proj_size=comb_proj_size)
 if __name__ == "__main__":
     ### ==== resnet50 ====
     # model = build_resnet50(pretrained='./resnet50_miil_21k.pth')
@@ -385,7 +388,7 @@ if __name__ == "__main__":
 MODEL_GETTER = {
     "resnet50":build_resnet50,
     "swin-t":build_swintransformer,
-    "swin-t2": build_swintransformer2,
+    # "swin-t2": build_swintransformer2,
     "vit":build_vit16,
     "efficient":build_efficientnet
 }

@@ -54,6 +54,7 @@ def set_environment(args, tlogger):
     # 创建模型
     model = MODEL_GETTER[args.model_name](
         use_fpn = args.use_fpn,
+        img_size=args.data_size,
         fpn_size = args.fpn_size,
         use_selection = args.use_selection,
         num_classes = args.num_classes,
@@ -203,6 +204,17 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         # loss_b0即是论文中的lossr
                         loss_b0 = nn.KLDivLoss()(logit, gt_score_map)
                         #
+                        loss += args.lambda_b0 * loss_b0
+                    else:
+                        loss_b0 = 0.0
+                elif "FPN1_" not in name and "layer" in name:
+                    if args.lambda_b0 != 0:
+
+                        gt_score_map = outs[name].detach()
+                        S = gt_score_map.size(1)
+                        logit = outs[name].view(-1, args.num_classes).contiguous()
+                        loss_b0 = nn.CrossEntropyLoss()(logit,
+                                                       labels.unsqueeze(1).repeat(1, S).flatten(0))
                         loss += args.lambda_b0 * loss_b0
                     else:
                         loss_b0 = 0.0
