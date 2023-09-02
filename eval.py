@@ -88,7 +88,16 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
             # 计算得到被丢弃的映射的损失，即论文中的loss_d
             msg["train_loss/{}_loss".format(name)] = loss.item()
             total_loss += loss.item()
-
+        for name in outs:
+            if "sice_" not in name:
+                continue
+            acc = top_k_corrects(outs[name], labels, tops=[1])["top-1"] / batch_size
+            acc = round(acc * 100, 2)
+            msg["train_acc/sice_{}_acc".format(name)] = acc
+            loss = F.cross_entropy(outs[name], labels)
+            # 论文中的loss_m
+            msg["train_loss/sice_{}_loss".format(name)] = loss.item()
+            total_loss += loss.item()
     if args.use_combiner:
         # 计算得到结合器输出精确度以及对应的损失
         acc = top_k_corrects(outs['comb_outs'], labels, tops=[1])["top-1"] / batch_size
@@ -272,6 +281,11 @@ def evaluate(args, model, test_loader):
                     logit = outs[name].view(-1, args.num_classes)
                     labels_0 = labels.unsqueeze(1).repeat(1, S).flatten(0)
                     _cal_evalute_metric(corrects, total_samples, logit, labels_0, this_name)
+                for name in outs:
+                    if "sice_" not in name:
+                        continue
+                    this_name = name
+                    _cal_evalute_metric(corrects, total_samples, outs[name], labels, this_name)
 
             if args.use_combiner:
                 this_name = "combiner"

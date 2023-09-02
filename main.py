@@ -207,7 +207,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         loss += args.lambda_b0 * loss_b0
                     else:
                         loss_b0 = 0.0
-                elif "FPN1_" not in name and "layer" in name:
+                elif "FPN1_" not in name and "sice_" not in name  and "layer" in name:
                     if args.lambda_b0 != 0:
 
                         gt_score_map = outs[name].detach()
@@ -218,6 +218,9 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         loss += args.lambda_b0 * loss_b0
                     else:
                         loss_b0 = 0.0
+                elif "sice_" in name:
+                        loss_sice=nn.CrossEntropyLoss()(outs[name],labels)
+                        loss+=1.0*loss_sice
                 # 如果使用了选择器
                 elif "select_" in name:
                     if not args.use_selection:

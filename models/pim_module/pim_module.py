@@ -6,7 +6,7 @@ from torchvision.models.feature_extraction import get_graph_node_names
 from torchvision.models.feature_extraction import create_feature_extractor
 from typing import Union
 import copy
-
+from .SICE import SICE
 class GCNCombiner(nn.Module):
 
     def __init__(self, 
@@ -611,6 +611,7 @@ class PluginMoodel(nn.Module):
                  num_classes: int,
                  num_selects: dict, 
                  use_combiner: bool,
+                 use_sice: bool,
                  comb_proj_size: Union[int, None]
                  ):
         """
@@ -647,7 +648,12 @@ class PluginMoodel(nn.Module):
         could be different).
         """
         super(PluginMoodel, self).__init__()
-        
+        self.use_sice=use_sice
+        if use_sice:
+            self.representation = SICE(iterNum=5, is_sqrt=True, is_vec=True, input_dim=1536, dimension_reduction=256,
+                                   sparsity_val=0.01, sice_lrate=5.0)
+            self.fpn_classifier = nn.Linear(self.representation.output_dim, num_classes)
+
         ### = = = = = Backbone = = = = =
         # 主干网络
         # 如果返回节点不为空则从主干网络中指定的层数获得特征
@@ -783,6 +789,7 @@ class PluginMoodel(nn.Module):
         x: [B, C, H, W] or [B, S, C]
            [B, C, H, W] --> [B, H*W, C]
         """
+        # X[B, H*W, C]
         for name in x:
             if "FPN1_" in name:
                 continue
@@ -792,6 +799,13 @@ class PluginMoodel(nn.Module):
                 logit = x[name].view(B, C, H*W)
             elif len(x[name].size()) == 3:
                 logit = x[name].transpose(1, 2).contiguous()
+                if self.use_sice:
+                    sice_output=self.representation(logit)
+                    sice_output = sice_output.view(sice_output.size(0), -1)
+                    sice_output=self.fpn_classifier(sice_output)
+                    sice_name="sice_"+name
+                    # print("sice的名字",sice_name)
+                    logits[sice_name]=sice_output
             logits[name] = getattr(self, "fpn_classifier_down_" + name)(logit)
             # [1, 2304, 200]
             logits[name] = logits[name].transpose(1, 2).contiguous() # transpose
