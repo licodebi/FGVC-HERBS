@@ -5,6 +5,8 @@ from scipy import ndimage
 from torchvision.models.feature_extraction import create_feature_extractor
 import torch
 import torch.nn as nn
+import numpy as np
+from pim_module.SICE import SICE
 def load_model_weights_vit(model, model_path):
     ### reference https://github.com/TACJu/TransFG
     ### thanks a lot.
@@ -77,6 +79,9 @@ input = outs[inp_name][:, 1:, :]
 class Vit_FPN(nn.Module):
     def __init__(self, inputs: dict, fpn_size: int):
         super(Vit_FPN, self).__init__()
+        self.representation=SICE(iterNum=5,is_sqrt=True,is_vec=True,input_dim=1536,dimension_reduction=256,
+                                 sparsity_val=0.01,sice_lrate=5.0)
+        self.classifier = nn.Linear(self.representation.output_dim, 200)
         scale_factors=[0.5,1.0,2.0,4.0]
         inp_names = [name for name in inputs]
         inp_name=inp_names[-1]
@@ -135,16 +140,24 @@ class Vit_FPN(nn.Module):
             self.add_module(f"Up_layer{idx+1}", layers)
             self.add_module(f"Proj_layer{idx+1}", m)
     def forward(self, x):
+        # (B,C,H*W)
         x=x.transpose(1, 2).contiguous()
         outputs = {}
         i=3
         input = getattr(self, "Up_layer4")(x)
         outputs[f"layer{i+1}"]=input
         print("反卷积后的大小",outputs["layer4"].shape)
+        # (B,H*W,C)
         input = input.transpose(1, 2).contiguous()
-        input = getattr(self, "Proj_layer4")(input)
-        print("投影后的大小", input.shape)
-        print(input.shape)
+        # (B,C,H*W)
+        input = getattr(self, "Proj_layer4")(input).transpose(1, 2).contiguous()
+        input=self.representation(input)
+        # (B,H*W,C)
+        print("投影后的大小1", input.shape)
+        input=input.view(input.size(0), -1)
+        print("投影后的大小2", input.shape)
+        input=self.classifier(input)
+        print("投影后的大小3", input.shape)
         return input
 model=Vit_FPN(outs,1536)
 print("输入的大小",input.shape)
