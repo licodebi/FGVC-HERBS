@@ -124,6 +124,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
     
     optimizer.zero_grad()
     #获得批次数，等于训练集图片数/batch_size
+    # 5994/8=750
     total_batchs = len(train_loader) # just for log
     # 用于显示百分比
     show_progress = [x/10 for x in range(11)] # just for log
@@ -137,6 +138,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
     # temperature = 0.5 ** (epoch // 10) * args.temperature
     # temperature = args.temperature
     # 总批次数%update_freq（更新频率）=更新的次数
+    #n_left_batchs=750%4=2
     n_left_batchs = len(train_loader) % args.update_freq
     # 迭代训练集
     # batch_id批次号，ids图片索引，datas图片，lables图片对应的标签索引
@@ -210,17 +212,18 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                 elif "FPN1_" not in name and "sice_" not in name  and "layer" in name:
                     if args.lambda_b0 != 0:
 
-                        gt_score_map = outs[name].detach()
-                        S = gt_score_map.size(1)
-                        logit = outs[name].view(-1, args.num_classes).contiguous()
-                        loss_b0 = nn.CrossEntropyLoss()(logit,
-                                                       labels.unsqueeze(1).repeat(1, S).flatten(0))
+                        # gt_score_map = outs[name].detach()
+                        # S = gt_score_map.size(1)
+                        # logit = outs[name].view(-1, args.num_classes).contiguous()
+                        # loss_b0 = nn.CrossEntropyLoss()(logit,
+                        #                                labels.unsqueeze(1).repeat(1, S).flatten(0))
+                        loss_b0 = nn.CrossEntropyLoss()(outs[name].mean(1), labels)
                         loss += args.lambda_b0 * loss_b0
                     else:
                         loss_b0 = 0.0
                 elif "sice_" in name:
-                        loss_sice=nn.CrossEntropyLoss()(outs[name],labels)
-                        loss+=1.0*loss_sice
+                    loss_sice=nn.CrossEntropyLoss()(outs[name],labels)
+                    loss+=args.lambda_c*loss_sice
                 # 如果使用了选择器
                 elif "select_" in name:
                     if not args.use_selection:
@@ -304,7 +307,8 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
             loss.backward()
 
         """ = = = = update model = = = = """
-        # 更新模型
+        # 更新模型,如果当前的批次号+1可以整除update_freq或者是最后一个批次则进行梯度更新
+        # 批次号总数为=图片数/batch_size
         if (batch_id + 1) % args.update_freq == 0 or (batch_id + 1) == len(train_loader):
             if args.use_amp:
                 scaler.step(optimizer)
@@ -320,10 +324,10 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
             # 得到当前迭代数以及对应的学习率
             msg['info/epoch'] = epoch + 1
             msg['info/lr'] = get_lr(optimizer)
-            # 计算训练精确度
+            # 计算训练精确度,并存入wandb的日志当中
             cal_train_metrics(args, msg, outs, labels, batch_size, model.selector.thresholds)
             wandb.log(msg)
-        
+        # 现实进度，每次现实10%
         train_progress = (batch_id + 1) / total_batchs
         # print(train_progress, show_progress[progress_i])
         if train_progress > show_progress[progress_i]:
@@ -373,7 +377,7 @@ def main(args, tlogger):
         model_to_save = model.module if hasattr(model, "module") else model
         checkpoint = {"model": model_to_save.state_dict(), "optimizer": optimizer.state_dict(), "epoch":epoch}
         torch.save(checkpoint, args.save_dir + "backup/last.pt")
-
+        # 如果当前的epoch为十的倍数则
         if epoch == 0 or (epoch + 1) % args.eval_freq == 0:
             """
             Evaluation

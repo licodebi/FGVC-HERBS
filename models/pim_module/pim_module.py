@@ -138,13 +138,13 @@ class GCNCombiner(nn.Module):
         hs = self.batch_norm1(hs)
         ### predict
         # （B, 1536, 1）
-        hs = self.param_pool1(hs)
-        # print("池化后的hs大小",hs.shape)
-        hs = self.dropout(hs)
-        # torch.Size([B, 1536])
-        hs = hs.flatten(1)
-        # torch.Size([B, 200])
-        hs = self.classifier(hs)
+        # hs = self.param_pool1(hs)
+        # # print("池化后的hs大小",hs.shape)
+        # hs = self.dropout(hs)
+        # # torch.Size([B, 1536])
+        # hs = hs.flatten(1)
+        # # torch.Size([B, 200])
+        # hs = self.classifier(hs)
 
         return hs
 
@@ -799,13 +799,13 @@ class PluginMoodel(nn.Module):
                 logit = x[name].view(B, C, H*W)
             elif len(x[name].size()) == 3:
                 logit = x[name].transpose(1, 2).contiguous()
-                if self.use_sice:
-                    sice_output=self.representation(logit)
-                    sice_output = sice_output.view(sice_output.size(0), -1)
-                    sice_output=self.fpn_classifier(sice_output)
-                    sice_name="sice_"+name
-                    # print("sice的名字",sice_name)
-                    logits[sice_name]=sice_output
+                # if self.use_sice:
+                #     sice_output=self.representation(logit)
+                #     sice_output = sice_output.view(sice_output.size(0), -1)
+                #     sice_output=self.fpn_classifier(sice_output)
+                #     sice_name="sice_"+name
+                #     # print("sice的名字",sice_name)
+                #     logits[sice_name]=sice_output
             logits[name] = getattr(self, "fpn_classifier_down_" + name)(logit)
             # [1, 2304, 200]
             logits[name] = logits[name].transpose(1, 2).contiguous() # transpose
@@ -889,6 +889,9 @@ class PluginMoodel(nn.Module):
         if self.use_combiner:
             # 得到comb_outs=[B,200]
             comb_outs = self.combiner(selects)
+            comb_outs=self.representation(comb_outs)
+            comb_outs=comb_outs.view(comb_outs.size(0), -1)
+            comb_outs = self.fpn_classifier(comb_outs)
             logits['comb_outs'] = comb_outs
             return logits
         # 如果仅使用了选择器或者fpn

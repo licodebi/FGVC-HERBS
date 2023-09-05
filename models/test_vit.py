@@ -71,7 +71,7 @@ rand_in = torch.randn(1, 3, img_size, img_size)
 outs = backbone(rand_in)
 inp_names = [name for name in outs]
 inp_name = inp_names[-1]
-input = outs[inp_name][:, 1:, :]
+input = outs[inp_name]
 # torch.Size([1, 577, 768])
 # 其中图片torch.Size([1, 576, 768])
 # for name in outs:
@@ -86,7 +86,8 @@ class Vit_FPN(nn.Module):
         inp_names = [name for name in inputs]
         inp_name=inp_names[-1]
         # torch.Size([1, 576, 768])
-        input=inputs[inp_name][:,1:,:]
+        # input=inputs[inp_name][:,1:,:]
+        input = inputs[inp_name][:, 1:, :]
         # m = nn.Sequential(
         #     nn.Linear(input.size(-1), input.size(-1), 1),
         #     nn.ReLU(),

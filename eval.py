@@ -38,12 +38,12 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
             loss = F.cross_entropy(outs["layer"+str(i)].mean(1), labels)
             msg["train_loss/layer{}_loss".format(i)] = loss.item()
             total_loss += loss.item()
-            gt_score_map = outs["layer"+str(i)].detach()
-            S = gt_score_map.size(1)
-            logit = outs["layer"+str(i)].view(-1, args.num_classes).contiguous()
-            loss_b0 = nn.CrossEntropyLoss()(logit,
-                                            labels.unsqueeze(1).repeat(1, S).flatten(0))
-            msg["train_loss/layer{}_loss0".format(i)] = loss_b0.item()
+            # gt_score_map = outs["layer"+str(i)].detach()
+            # S = gt_score_map.size(1)
+            # logit = outs["layer"+str(i)].view(-1, args.num_classes).contiguous()
+            # loss_b0 = nn.CrossEntropyLoss()(logit,
+            #                                 labels.unsqueeze(1).repeat(1, S).flatten(0))
+            # msg["train_loss/layer{}_loss0".format(i)] = loss_b0.item()
             # gt_score_map = outs["layer"+str(i)]
             # thres = torch.Tensor(thresholds["layer"+str(i)])
             # gt_score_map = suppression(gt_score_map, thres)
@@ -155,7 +155,7 @@ def _cal_evalute_metric(corrects: dict,
                         this_name: str,
                         scores: Union[list, None] = None, 
                         score_names: Union[list, None] = None):
-    
+    #
     tmp_score = torch.softmax(logits, dim=-1)
     # 得到top-1和top-3的精确度
     tmp_corrects = top_k_corrects(tmp_score, labels, tops=[1, 3]) # return top-1, top-3, top-5 accuracy
@@ -166,6 +166,8 @@ def _cal_evalute_metric(corrects: dict,
         if eval_name not in corrects:
             corrects[eval_name] = 0
             total_samples[eval_name] = 0
+        # corrects存储预测值与真实值相同的样本数
+        # total_samples保存样本数
         corrects[eval_name] += tmp_corrects[name]
         total_samples[eval_name] += labels.size(0)
     
@@ -199,12 +201,12 @@ def _average_top_k_result(corrects: dict, total_samples: dict, scores: list, lab
         labels = labels.cpu()
     
     batch_size = labels.size(0)
-    scores_t = torch.cat([s.unsqueeze(1) for s in scores], dim=1) # B, 5, C
+    scores_t = torch.cat([s.unsqueeze(1) for s in scores], dim=1) # B, S, C
 
     if scores_t.device != torch.device('cpu'):
         scores_t = scores_t.cpu()
 
-    max_scores = torch.max(scores_t, dim=-1)[0]
+    max_scores = torch.max(scores_t, dim=-1)[0] # B, S
     # sorted_ids = torch.sort(max_scores, dim=-1, descending=True)[1] # this id represents different layers outputs, not samples
 
     for b in range(batch_size):
@@ -233,7 +235,6 @@ def evaluate(args, model, test_loader):
     average-higest-5 accuracy (average-higest-5 means average all predict scores
     as final predict)
     """
-
     model.eval()
     corrects = {}
     total_samples = {}
