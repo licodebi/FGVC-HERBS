@@ -223,7 +223,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         loss_b0 = 0.0
                 elif "sice_" in name:
                     loss_sice=nn.CrossEntropyLoss()(outs[name],labels)
-                    loss+=args.lambda_c*loss_sice
+                    loss+=0.25*loss_sice
                 # 如果使用了选择器
                 elif "select_" in name:
                     if not args.use_selection:
