@@ -24,48 +24,39 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
     """
     only present top-1 training accuracy
     """
-    # 总损失
+
     total_loss = 0.0
-    # 如果使用了fpn
+
     if args.use_fpn:
         for i in range(1, 5):
-            # 得到top-1的精确度
             acc = top_k_corrects(outs["layer"+str(i)].mean(1), labels, tops=[1])["top-1"] / batch_size
-            # 将精确度转为百分比
             acc = round(acc * 100, 2)
             msg["train_acc/layer{}_acc".format(i)] = acc
-            # 得到训练损失中每一层的损失
             loss = F.cross_entropy(outs["layer"+str(i)].mean(1), labels)
             msg["train_loss/layer{}_loss".format(i)] = loss.item()
             total_loss += loss.item()
-
+            
             gt_score_map = outs["layer"+str(i)]
             thres = torch.Tensor(thresholds["layer"+str(i)])
             gt_score_map = suppression(gt_score_map, thres)
             logit = F.log_softmax(outs["FPN1_layer" + str(i)] / args.temperature, dim=-1)
             loss_b0 = nn.KLDivLoss()(logit, gt_score_map)
-            # 得到的是论文中的loss_r
             msg["train_loss/layer{}_FPN1_loss".format(i)] = loss_b0.item()
 
-    # 如果使用选择器
+
     if args.use_selection:
         for name in outs:
             if "select_" not in name:
                 continue
-            # 得到选择器的输出
             B, S, _ = outs[name].size()
-            # 得到[B*S,200]
             logit = outs[name].view(-1, args.num_classes)
-            # labels变为[B*S]
             labels_0 = labels.unsqueeze(1).repeat(1, S).flatten(0)
             acc = top_k_corrects(logit, labels_0, tops=[1])["top-1"] / (B*S)
             acc = round(acc * 100, 2)
-            # 计算得到选择器精确度
             msg["train_acc/{}_acc".format(name)] = acc
             labels_0 = torch.zeros([B * S, args.num_classes]) - 1
             labels_0 = labels_0.to(args.device)
             loss = F.mse_loss(F.tanh(logit), labels_0)
-            # 计算损失
             msg["train_loss/{}_loss".format(name)] = loss.item()
             total_loss += loss.item()
 
@@ -77,20 +68,16 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
             labels_1 = labels.unsqueeze(1).repeat(1, S).flatten(0)
             acc = top_k_corrects(logit, labels_1, tops=[1])["top-1"] / (B*S)
             acc = round(acc * 100, 2)
-            # 计算得到被丢弃的映射精确度
             msg["train_acc/{}_acc".format(name)] = acc
             loss = F.cross_entropy(logit, labels_1)
-            # 计算得到被丢弃的映射的损失，即论文中的loss_d
             msg["train_loss/{}_loss".format(name)] = loss.item()
             total_loss += loss.item()
 
     if args.use_combiner:
-        # 计算得到结合器输出精确度以及对应的损失
         acc = top_k_corrects(outs['comb_outs'], labels, tops=[1])["top-1"] / batch_size
         acc = round(acc * 100, 2)
         msg["train_acc/combiner_acc"] = acc
         loss = F.cross_entropy(outs['comb_outs'], labels)
-        # 论文中的loss_m
         msg["train_loss/combiner_loss"] = loss.item()
         total_loss += loss.item()
 
@@ -107,7 +94,6 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
 
 
 @torch.no_grad()
-# 输入预测值以及对应的lable
 def top_k_corrects(preds: torch.Tensor, labels: torch.Tensor, tops: list = [1, 3, 5]):
     """
     preds: [B, C] (C is num_classes)
@@ -118,16 +104,11 @@ def top_k_corrects(preds: torch.Tensor, labels: torch.Tensor, tops: list = [1, 3
     if labels.device != torch.device('cpu'):
         labels = labels.cpu()
     tmp_cor = 0
-    # 初始化corrects,每个top-k的值初始化为0
     corrects = {"top-"+str(x):0 for x in tops}
-    #对preds的类别维度进行排序，并返回排序后的索引即是对应的类别索引
     sorted_preds = torch.sort(preds, dim=-1, descending=True)[1]
-    # 取top数组的最后一个作为迭代范围
     for i in range(tops[-1]):
-        # 取到每个样本的前i个与labels进行比较，并统计相同的数量
         tmp_cor += sorted_preds[:, i].eq(labels).sum().item()
         # records
-        # 记录top-k的数量
         if "top-"+str(i+1) in corrects:
             corrects["top-"+str(i+1)] = tmp_cor
     return corrects
@@ -141,9 +122,7 @@ def _cal_evalute_metric(corrects: dict,
                         this_name: str,
                         scores: Union[list, None] = None, 
                         score_names: Union[list, None] = None):
-    
     tmp_score = torch.softmax(logits, dim=-1)
-    # 得到top-1和top-3的精确度
     tmp_corrects = top_k_corrects(tmp_score, labels, tops=[1, 3]) # return top-1, top-3, top-5 accuracy
     
     ### each layer's top-1, top-3 accuracy
@@ -163,7 +142,8 @@ def _cal_evalute_metric(corrects: dict,
 
 @torch.no_grad()
 def _average_top_k_result(corrects: dict, total_samples: dict, scores: list, labels: torch.Tensor, 
-    tops: list = [1, 2, 3, 4, 5, 6, 7, 8, 9]):
+    # tops: list = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+      tops: list = [1] ):
     """
     scores is a list contain:
     [
@@ -184,7 +164,6 @@ def _average_top_k_result(corrects: dict, total_samples: dict, scores: list, lab
     
     batch_size = labels.size(0)
     scores_t = torch.cat([s.unsqueeze(1) for s in scores], dim=1) # B, 5, C
-
     if scores_t.device != torch.device('cpu'):
         scores_t = scores_t.cpu()
 
@@ -221,9 +200,8 @@ def evaluate(args, model, test_loader):
     model.eval()
     corrects = {}
     total_samples = {}
-    # 得到总的测试batch数
+
     total_batchs = len(test_loader) # just for log
-    # 用于显示测试进度
     show_progress = [x/10 for x in range(11)] # just for log
     progress_i = 0
 
@@ -234,16 +212,18 @@ def evaluate(args, model, test_loader):
             score_names = []
             scores = []
             datas = datas.to(args.device)
-            # 经过模型得到输出
+
             outs = model(datas)
 
             if args.use_fpn:
                 for i in range(1, 5):
                     this_name = "layer" + str(i)
-                    _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
+                    # _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
+                    _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name)
 
                     this_name = "FPN1_layer" + str(i)
-                    _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
+                    _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name)
+                    # _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
             
             ### for research
             if args.use_selection:
@@ -273,7 +253,6 @@ def evaluate(args, model, test_loader):
             if "ori_out" in outs:
                 this_name = "original"
                 _cal_evalute_metric(corrects, total_samples, outs["ori_out"], labels, this_name)
-        
             _average_top_k_result(corrects, total_samples, scores, labels)
 
             eval_progress = (batch_id + 1) / total_batchs
@@ -288,6 +267,7 @@ def evaluate(args, model, test_loader):
         best_top1 = 0.0
         best_top1_name = ""
         eval_acces = {}
+        print("当前corrects中的key值",corrects.keys())
         for name in corrects:
             acc = corrects[name] / total_samples[name]
             acc = round(100 * acc, 3)
@@ -381,7 +361,6 @@ def evaluate_cm(args, model, test_loader):
 
 @torch.no_grad()
 def eval_and_save(args, model, val_loader, tlogger):
-    # 进行预测
     tlogger.print("Start Evaluating")
     acc, eval_name, eval_acces = evaluate(args, model, val_loader)
     tlogger.print("....BEST_ACC: {} {}%".format(eval_name, acc))
