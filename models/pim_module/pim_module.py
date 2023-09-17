@@ -41,7 +41,7 @@ class GCNCombiner(nn.Module):
                 elif len(name) == 3:
                     in_size = inputs[name].size(2)
                 else:
-                    raise ValusError("The size of output dimension of previous must be 3 or 4.")
+                    raise RuntimeError("The size of output dimension of previous must be 3 or 4.")
                 # 进行投影,将输入通道调整为投影大小
                 m = nn.Sequential(
                     nn.Linear(in_size, proj_size),
@@ -136,15 +136,15 @@ class GCNCombiner(nn.Module):
         hs = torch.matmul(hs, A1)
         # 正则化
         hs = self.batch_norm1(hs)
-        ### predict
+        ## predict
         # （B, 1536, 1）
-        # hs = self.param_pool1(hs)
-        # # print("池化后的hs大小",hs.shape)
-        # hs = self.dropout(hs)
-        # # torch.Size([B, 1536])
-        # hs = hs.flatten(1)
-        # # torch.Size([B, 200])
-        # hs = self.classifier(hs)
+        hs = self.param_pool1(hs)
+        # print("池化后的hs大小",hs.shape)
+        hs = self.dropout(hs)
+        # torch.Size([B, 1536])
+        hs = hs.flatten(1)
+        # torch.Size([B, 200])
+        hs = self.classifier(hs)
 
         return hs
 
@@ -353,6 +353,7 @@ class Vit_FPN(nn.Module):
         inp_names = [name for name in x]
         inp_name = inp_names[-1]
         input = x[inp_name][:, 1:, :]
+        # B,C,S
         input=input.transpose(1, 2).contiguous()
 
         hs = []
@@ -366,6 +367,7 @@ class Vit_FPN(nn.Module):
             hs.append(name)
         for i in range(len(hs)):
             name=hs[i]
+            # B,S,C
             outputs[f"layer{i+1}"]=getattr(self, "Proj_"+name)(getattr(self, "Up_"+name)(input).transpose(1, 2).contiguous())
         return outputs
 class FPN(nn.Module):
@@ -650,7 +652,7 @@ class PluginMoodel(nn.Module):
         super(PluginMoodel, self).__init__()
         self.use_sice=use_sice
         if use_sice:
-            self.representation = SICE(iterNum=5, is_sqrt=True, is_vec=True, input_dim=1536, dimension_reduction=256,
+            self.representation = SICE(iterNum=8, is_sqrt=True, is_vec=True, input_dim=1536, dimension_reduction=256,
                                    sparsity_val=0.01, sice_lrate=5.0)
             self.fpn_classifier = nn.Linear(self.representation.output_dim, num_classes)
 

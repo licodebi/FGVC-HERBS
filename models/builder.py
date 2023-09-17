@@ -2,7 +2,9 @@ import torch
 from typing import Union
 from torchvision.models.feature_extraction import get_graph_node_names
 
-from .pim_module import pim_module
+# from .pim_module import pim_module
+from .pim_module import siandpi_module
+
 
 """
 [Default Return]
@@ -98,7 +100,7 @@ def build_resnet50(pretrained: str = "./resnet50_miil_21k.pth",
     # print(backbone)
     # print(get_graph_node_names(backbone))
     
-    return pim_module.PluginMoodel(backbone = backbone,
+    return siandpi_module.PluginMoodel(backbone = backbone,
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
@@ -151,7 +153,7 @@ def build_efficientnet(pretrained: bool = True,
     # print(get_graph_node_names(backbone))
     ## features.1~features.7
 
-    return pim_module.PluginMoodel(backbone = backbone,
+    return siandpi_module.PluginMoodel(backbone = backbone,
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
@@ -198,17 +200,15 @@ def build_vit16(pretrained: str = "models/vit_base_patch16_224_in21k_miil.pth",
 
     if return_nodes is None:
         return_nodes = {
-            'blocks.8': 'layer1',
-            'blocks.9': 'layer2',
-            'blocks.10': 'layer3',
-            'blocks.11': 'layer4',
+            'blocks.9': 'layer1',
+            'blocks.10': 'layer2',
+            'blocks.11': 'layer3',
         }
     if num_selects is None:
         num_selects = {
             'layer1':32,
             'layer2':32,
-            'layer3':32,
-            'layer4':32
+            'layer3':32
         }
     # 导入数学库和图像处理库
     import math
@@ -238,12 +238,12 @@ def build_vit16(pretrained: str = "models/vit_base_patch16_224_in21k_miil.pth",
     # 将位置嵌入作为模型的参数，并赋值给 backbone.pos_embed
     backbone.pos_embed = torch.nn.Parameter(posemb)
 
-    return pim_module.PluginMoodel(backbone = backbone,
+    return siandpi_module.PluginMoodel(backbone = backbone,
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
                                    use_vit_fpn=True,
-                                   use_sice=True,
+                                   use_struct=True,
                                    fpn_size = fpn_size,
                                    proj_type = proj_type,
                                    upsample_type = upsample_type,
@@ -296,7 +296,7 @@ def build_swintransformer(pretrained: bool = True,
     backbone.train()
     
     print("Building...")
-    return pim_module.PluginMoodel(backbone = backbone,
+    return siandpi_module.PluginMoodel(backbone = backbone,
                                    return_nodes = None,
                                    img_size = img_size,
                                    use_fpn = use_fpn,

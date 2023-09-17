@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from models.pim_module.con_loss_new import con_loss_new
 import torch.nn.functional as F
 from typing import Union
 import pandas as pd
@@ -30,10 +31,10 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
     if args.use_fpn:
         for i in range(1, 5):
             # 得到top-1的精确度
-            acc = top_k_corrects(outs["layer"+str(i)].mean(1), labels, tops=[1])["top-1"] / batch_size
-            # 将精确度转为百分比
-            acc = round(acc * 100, 2)
-            msg["train_acc/layer{}_acc".format(i)] = acc
+            # acc = top_k_corrects(outs["layer"+str(i)].mean(1), labels, tops=[1])["top-1"] / batch_size
+            # # 将精确度转为百分比
+            # acc = round(acc * 100, 2)
+            # msg["train_acc/layer{}_acc".format(i)] = acc
             # 得到训练损失中每一层的损失
             loss = F.cross_entropy(outs["layer"+str(i)].mean(1), labels)
             msg["train_loss/layer{}_loss".format(i)] = loss.item()
@@ -55,18 +56,20 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
     # 如果使用选择器
     if args.use_selection:
         for name in outs:
-            if "select_" not in name:
+            # if "select_" not in name:
+            #     continue
+            if "drop_" not in name:
                 continue
             # 得到选择器的输出
             B, S, _ = outs[name].size()
             # 得到[B*S,200]
             logit = outs[name].view(-1, args.num_classes)
             # labels变为[B*S]
-            labels_0 = labels.unsqueeze(1).repeat(1, S).flatten(0)
-            acc = top_k_corrects(logit, labels_0, tops=[1])["top-1"] / (B*S)
-            acc = round(acc * 100, 2)
-            # 计算得到选择器精确度
-            msg["train_acc/{}_acc".format(name)] = acc
+            # labels_0 = labels.unsqueeze(1).repeat(1, S).flatten(0)
+            # acc = top_k_corrects(logit, labels_0, tops=[1])["top-1"] / (B*S)
+            # acc = round(acc * 100, 2)
+            # # 计算得到选择器精确度
+            # msg["train_acc/{}_acc".format(name)] = acc
             labels_0 = torch.zeros([B * S, args.num_classes]) - 1
             labels_0 = labels_0.to(args.device)
             loss = F.mse_loss(F.tanh(logit), labels_0)
@@ -75,29 +78,33 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
             total_loss += loss.item()
 
         for name in outs:
-            if "drop_" not in name:
+            # if "drop_" not in name:
+            #     continue
+            if "select_" not in name:
                 continue
             B, S, _ = outs[name].size()
             logit = outs[name].view(-1, args.num_classes)
             labels_1 = labels.unsqueeze(1).repeat(1, S).flatten(0)
-            acc = top_k_corrects(logit, labels_1, tops=[1])["top-1"] / (B*S)
-            acc = round(acc * 100, 2)
-            # 计算得到被丢弃的映射精确度
-            msg["train_acc/{}_acc".format(name)] = acc
+            # acc = top_k_corrects(logit, labels_1, tops=[1])["top-1"] / (B*S)
+            # acc = round(acc * 100, 2)
+            # # 计算得到被丢弃的映射精确度
+            # msg["train_acc/{}_acc".format(name)] = acc
             loss = F.cross_entropy(logit, labels_1)
             # 计算得到被丢弃的映射的损失，即论文中的loss_d
             msg["train_loss/{}_loss".format(name)] = loss.item()
             total_loss += loss.item()
-        for name in outs:
-            if "sice_" not in name:
-                continue
-            acc = top_k_corrects(outs[name], labels, tops=[1])["top-1"] / batch_size
-            acc = round(acc * 100, 2)
-            msg["train_acc/sice_{}_acc".format(name)] = acc
-            loss = F.cross_entropy(outs[name], labels)
-            # 论文中的loss_m
-            msg["train_loss/sice_{}_loss".format(name)] = loss.item()
-            total_loss += loss.item()
+        # for name in outs:
+        #     if "sice_" not in name:
+        #         continue
+        #     acc = top_k_corrects(outs[name], labels, tops=[1])["top-1"] / batch_size
+        #     acc = round(acc * 100, 2)
+        #     msg["train_acc/sice_{}_acc".format(name)] = acc
+        #     loss = F.cross_entropy(outs[name], labels)
+        #     # 论文中的loss_m
+        #     msg["train_loss/sice_{}_loss".format(name)] = loss.item()
+        #     total_loss += loss.item()
+    contrast_loss = con_loss_new(outs[name], labels.view(-1))
+    msg["train_loss/contrast_loss"]=contrast_loss
     if args.use_combiner:
         # 计算得到结合器输出精确度以及对应的损失
         acc = top_k_corrects(outs['comb_outs'], labels, tops=[1])["top-1"] / batch_size
@@ -116,7 +123,7 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
         msg["train_loss/ori_loss"] = loss.item()
         total_loss += loss.item()
 
-    msg["train_loss/total_loss"] = total_loss
+    msg["train_loss/total_loss"] = total_loss/2+contrast_loss/2
 
 
 
@@ -180,8 +187,9 @@ def _cal_evalute_metric(corrects: dict,
 @torch.no_grad()
 def _average_top_k_result(corrects: dict, total_samples: dict, scores: list, labels: torch.Tensor, 
     # tops: list = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-    tops: list = [1, 2, 3, 4, 5]
-                          ):
+    # tops: list = [1, 2, 3, 4, 5]
+    tops: list = [1]
+):
     """
     scores is a list contain:
     [
@@ -257,7 +265,7 @@ def evaluate(args, model, test_loader):
             if args.use_fpn:
                 for i in range(1, 5):
                     this_name = "layer" + str(i)
-                    _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
+                    # _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
 
                     # this_name = "FPN1_layer" + str(i)
                     # _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
@@ -272,7 +280,7 @@ def evaluate(args, model, test_loader):
                     S = outs[name].size(1)
                     logit = outs[name].view(-1, args.num_classes)
                     labels_1 = labels.unsqueeze(1).repeat(1, S).flatten(0)
-                    _cal_evalute_metric(corrects, total_samples, logit, labels_1, this_name)
+                    # _cal_evalute_metric(corrects, total_samples, logit, labels_1, this_name)
                 
                 for name in outs:
                     if "drop_" not in name:
@@ -281,12 +289,12 @@ def evaluate(args, model, test_loader):
                     S = outs[name].size(1)
                     logit = outs[name].view(-1, args.num_classes)
                     labels_0 = labels.unsqueeze(1).repeat(1, S).flatten(0)
-                    _cal_evalute_metric(corrects, total_samples, logit, labels_0, this_name)
+                    # _cal_evalute_metric(corrects, total_samples, logit, labels_0, this_name)
                 for name in outs:
                     if "sice_" not in name:
                         continue
                     this_name = name
-                    _cal_evalute_metric(corrects, total_samples, outs[name], labels, this_name)
+                    # _cal_evalute_metric(corrects, total_samples, outs[name], labels, this_name)
 
             if args.use_combiner:
                 this_name = "combiner"
@@ -315,6 +323,7 @@ def evaluate(args, model, test_loader):
             acc = round(100 * acc, 3)
             eval_acces[name] = acc
             ### only compare top-1 accuracy
+            # if "top-1" in name or "highest" in name:
             if "top-1" in name or "highest" in name:
                 if acc >= best_top1:
                     best_top1 = acc

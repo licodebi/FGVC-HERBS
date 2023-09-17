@@ -27,7 +27,6 @@ import logging
 from functools import partial
 from collections import OrderedDict
 from copy import deepcopy
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -193,7 +192,7 @@ class Attention(nn.Module):
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
-        return x
+        return x,attn
 
 
 class Block(nn.Module):
@@ -210,9 +209,10 @@ class Block(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
     def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
+        h,weight=self.attn(self.norm1(x))
+        x = x + self.drop_path(h)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
+        return x,weight
 
 
 class VisionTransformer(nn.Module):
@@ -266,11 +266,12 @@ class VisionTransformer(nn.Module):
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
-        self.blocks = nn.Sequential(*[
-            Block(
+        self.blocks = nn.ModuleList()
+        for i in range(depth):
+            block = Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, drop=drop_rate,
                 attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, act_layer=act_layer)
-            for i in range(depth)])
+            self.blocks.append(deepcopy(block))
         self.norm = norm_layer(embed_dim)
 
         # Representation layer
@@ -336,17 +337,21 @@ class VisionTransformer(nn.Module):
         else:
             x = torch.cat((cls_token, self.dist_token.expand(x.shape[0], -1, -1), x), dim=1)
         x = self.pos_drop(x + self.pos_embed)
-        x = self.blocks(x)
+        attn_weights = []
+        for i, block in enumerate(self.blocks):
+            x,weight=block(x)
+            attn_weights.append(weight)
+        # x = self.blocks(x)
         
         
         x = self.norm(x)
         if self.dist_token is None:
-            return self.pre_logits(x[:, 0])
+            return self.pre_logits(x[:, 0]),attn_weights
         else:
             return x[:, 0], x[:, 1]
 
     def forward(self, x):
-        x = self.forward_features(x)
+        x,attn_weights = self.forward_features(x)
         if self.head_dist is not None:
             x, x_dist = self.head(x[0]), self.head_dist(x[1])  # x must be a tuple
             if self.training and not torch.jit.is_scripting():
@@ -356,7 +361,7 @@ class VisionTransformer(nn.Module):
                 return (x + x_dist) / 2
         else:
             x = self.head(x)
-        return x
+        return x,attn_weights
 
 
 def _init_vit_weights(module: nn.Module, name: str = '', head_bias: float = 0., jax_impl: bool = False):

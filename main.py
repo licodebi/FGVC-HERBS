@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from models.pim_module.con_loss_new import con_loss_new
 import contextlib
 import wandb
 import warnings
@@ -30,6 +31,8 @@ def set_environment(args, tlogger):
     print("Setting Environment...")
     # 判断是否可以使用GPU计算，如果可以则设置gpu不行则使用cpu
     args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        tlogger.print("USE GPU....")
     ### = = = =  Dataset and Data Loader = = = =
     tlogger.print("Building Dataloader....")
     # 读取训练集以及验证集
@@ -183,47 +186,15 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
             loss = 0.
             for name in outs:
                 # 如果时上采样的结果
-                if "FPN1_" in name:
+                if "layer" in name:
                     if args.lambda_b0 != 0:
-                        # FPN1_layer1去掉FPN1_
-                        aux_name = name.replace("FPN1_", "")
-                        # 按aux_name从out中取出gt_score_map
-                        gt_score_map = outs[aux_name].detach()
-                        # 得到对应的阈值
-                        thres = torch.Tensor(model.selector.thresholds[aux_name])
-                        #将低于阈值的分数按temperature来进行调整
-                        # gt_score_map图像中每个位置的置信度分数，
-                        # 下采样的值得到论文中的Pi2
-                        gt_score_map = suppression(gt_score_map, thres, temperature)
-                        # 将输出张量/temperature得到logit
-                        # 上采样的值得到的论文中的Pi1
-                        logit = F.log_softmax(outs[name] / temperature, dim=-1)
-                        # 使用 Kullback-Leibler 散度损失函数 (nn.KLDivLoss()) 计算 logit 和 gt_score_map 之间的损失 loss_b0。
-                        # nn.KLDivLoss()计算两个分布之间的差异
-
-                        #nn.KLDivLoss()= ∑ P(i) * log(P(i) / Q(i))
-                        # P(i)为gt_score_map Q(i)为logit
-                        # loss_b0即是论文中的lossr
-                        loss_b0 = nn.KLDivLoss()(logit, gt_score_map)
-                        #
-                        loss += args.lambda_b0 * loss_b0
-                    else:
-                        loss_b0 = 0.0
-                elif "FPN1_" not in name and "sice_" not in name  and "layer" in name:
-                    if args.lambda_b0 != 0:
-
-                        # gt_score_map = outs[name].detach()
-                        # S = gt_score_map.size(1)
-                        # logit = outs[name].view(-1, args.num_classes).contiguous()
-                        # loss_b0 = nn.CrossEntropyLoss()(logit,
-                        #                                labels.unsqueeze(1).repeat(1, S).flatten(0))
                         loss_b0 = nn.CrossEntropyLoss()(outs[name].mean(1), labels)
                         loss += args.lambda_b0 * loss_b0
                     else:
                         loss_b0 = 0.0
-                elif "sice_" in name:
-                    loss_sice=nn.CrossEntropyLoss()(outs[name],labels)
-                    loss+=0.25*loss_sice
+                # elif "part_encoded" in name:
+                    # contrast_loss = con_loss_new(outs[name], labels.view(-1))
+                    # loss = loss+0.5 * contrast_loss
                 # 如果使用了选择器
                 elif "select_" in name:
                     if not args.use_selection:
@@ -265,19 +236,6 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         loss += args.lambda_n * loss_n
                     else:
                         loss_n = 0.0
-                #
-                elif "layer" in name:
-                    if not args.use_fpn:
-                        raise ValueError("FPN not use here.")
-                    if args.lambda_b != 0:
-                        ### here using 'layer1'~'layer4' is default setting, you can change to your own
-                        #outs[name]为[B, H*W, 200] [1, 2304, 200]平均后为[B,200]
-                        # 每一层的预测和lables进行交叉熵损失计算
-                        loss_b = nn.CrossEntropyLoss()(outs[name].mean(1), labels)
-                        # 论文中的loss_l
-                        loss += args.lambda_b * loss_b
-                    else:
-                        loss_b = 0.0
                 # 合并分类预测损失
                 elif "comb_outs" in name:
                     if not args.use_combiner:
@@ -289,7 +247,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         loss_c = nn.CrossEntropyLoss()(outs[name], labels)
                         # 论文中的loss_m
                         loss += args.lambda_c * loss_c
-
+                        print("总loss值",loss)
                 elif "ori_out" in name:
                     loss_ori = F.cross_entropy(outs[name], labels)
                     loss += loss_ori
