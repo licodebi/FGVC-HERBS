@@ -192,9 +192,9 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         loss += args.lambda_b0 * loss_b0
                     else:
                         loss_b0 = 0.0
-                # elif "part_encoded" in name:
-                    # contrast_loss = con_loss_new(outs[name], labels.view(-1))
-                    # loss = loss+0.5 * contrast_loss
+                elif "part_encoded" in name:
+                    contrast_loss = con_loss_new(outs[name], labels.view(-1))
+                    loss = loss+0.5 * contrast_loss
                 # 如果使用了选择器
                 elif "select_" in name:
                     if not args.use_selection:

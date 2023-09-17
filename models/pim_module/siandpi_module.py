@@ -529,11 +529,11 @@ class Part_Structure(nn.Module):
         structure_info, basic_anchor, position_weight = self.relative_coord_predictor(attention_map)
         # structure_info为(N,S,512)
         structure_info = self.gcn(structure_info, position_weight)
-
+        hidden_states_clone=hidden_states.clone()
         for i in range(B):
             index = int(basic_anchor[i,0]*H + basic_anchor[i,1])
-            hidden_states[i,0] = hidden_states[i,0] + structure_info[i, index, :]
-
+            hidden_states_clone[i,0] = hidden_states_clone[i,0] + structure_info[i, index, :]
+        hidden_states=hidden_states_clone
         return hidden_states
 
 
@@ -587,7 +587,6 @@ class PluginMoodel(nn.Module):
 
         gcn_inputs, gcn_proj_size = None, None
         total_num_selects = sum([num_selects[name] for name in num_selects])+len(num_selects) # sum
-        print("total_num_selects的数量",total_num_selects)
         # 设置图卷积聚合器
         self.combiner = GCNCombiner(total_num_selects, num_classes, gcn_inputs, gcn_proj_size, self.fpn_size)
 
@@ -622,9 +621,9 @@ class PluginMoodel(nn.Module):
         # 最后一层输出结果
         outs=self.block_feature_map(x)
         # 如果使用vit_fpn
-        y = self.fpn_down(outs)
-        self.fpn_predict_vit_down(y, logits)
-        selects = self.selector(y, logits)
+        x = self.fpn_down(outs)
+        self.fpn_predict_vit_down(x, logits)
+        selects = self.selector(x, logits)
         # 从后三层开始
         i=0
         class_token=[]
@@ -634,12 +633,12 @@ class PluginMoodel(nn.Module):
                 part_states=outs[name]
             _,attention_map=self.part_select(weights[0:i+1])
             hidden_states=self.part_structure(outs[name],attention_map)
-            class_token.append(torch.unsqueeze(self.part_norm(hidden_states[:,0].clone()), 1))
+            class_token.append(torch.unsqueeze(self.part_norm(hidden_states[:,0]), 1))
             i+=1
         last_token.append(weights[-1])
-        # _,attention_map=self.part_select(last_token)
-        # part_states = self.part_structure(part_states, attention_map)
-        # part_encoded = self.part_norm(part_states)[:,0]
+        _,attention_map=self.part_select(last_token)
+        part_states = self.part_structure(part_states, attention_map)
+        part_encoded = self.part_norm(part_states)[:,0]
         # part_encoded=nn.functional.normalize(part_encoded)
         j=0
         for name in selects:
@@ -647,8 +646,7 @@ class PluginMoodel(nn.Module):
             j+=1
         # 使用聚合器
         comb_outs = self.combiner(selects)
-        # logits['part_encoded']=part_encoded
+        logits['part_encoded']=part_encoded
         logits['comb_outs'] = comb_outs
-
         return logits
 
