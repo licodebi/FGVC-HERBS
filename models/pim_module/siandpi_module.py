@@ -329,6 +329,50 @@ class GraphConvolution(nn.Module):
         return self.__class__.__name__ + ' (' \
                + str(self.in_features) + ' -> ' \
                + str(self.out_features) + ')'
+class ClassMlp(nn.Module):
+    def __init__(self, input_dim, hidden_dim, num_classes):
+        super(ClassMlp, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, num_classes)
+        self.dropout = nn.Dropout(0.1)
+        self.act_fn = nn.ReLU()
+        # 初始化权重和偏置
+        nn.init.xavier_uniform_(self.fc1.weight)
+        nn.init.zeros_(self.fc1.bias)
+        nn.init.xavier_uniform_(self.fc2.weight)
+        nn.init.zeros_(self.fc2.bias)
+        nn.init.xavier_uniform_(self.fc3.weight)
+        nn.init.zeros_(self.fc3.bias)
+
+    def forward(self, x):
+        hs = []
+        names = []
+        for name in x:
+            # 暂时不使用从下到上的fpn
+            if "FPN1_" in name:
+                continue
+            #  如果未使用fpn网络
+            if self.fpn_size is None:
+                # 使用x[name]进行投影
+                _tmp = getattr(self, "proj_" + name)(x[name])
+            else:
+                # 否则直接获得x[name]
+                _tmp = x[name]
+            # x[name]添加入hs中
+            hs.append(_tmp)
+            # names添加name以及对应的大小
+            names.append([name, _tmp.size()])
+        hs = torch.cat(hs, dim=1).transpose(1, 2).contiguous()
+        hs = torch.flatten(hs, start_dim=1)
+        hs = self.fc1(hs)
+        hs = self.act_fn(hs)
+        hs = self.dropout(hs)
+        hs = self.fc2(hs)
+        hs = self.act_fn(hs)
+        hs = self.dropout(hs)
+        hs = self.fc3(hs)
+        return hs
 class Mlp(nn.Module):
     def __init__(self, fpn_size,num_class,mlp_dim):
         super(Mlp, self).__init__()
@@ -588,7 +632,9 @@ class PluginMoodel(nn.Module):
         gcn_inputs, gcn_proj_size = None, None
         total_num_selects = sum([num_selects[name] for name in num_selects])+len(num_selects) # sum
         # 设置图卷积聚合器
-        self.combiner = GCNCombiner(total_num_selects, num_classes, gcn_inputs, gcn_proj_size, self.fpn_size)
+        # self.combiner = GCNCombiner(total_num_selects, num_classes, gcn_inputs, gcn_proj_size, self.fpn_size)
+        input_dim=self.fpn_size*total_num_selects
+        self.combiner=ClassMlp(input_dim=input_dim,hidden_dim=256,num_classes=num_classes)
 
     # 每个block的分类器
     def build_fpn_classifier(self, inputs: dict, fpn_size: int, num_classes: int):
