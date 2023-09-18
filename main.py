@@ -247,7 +247,6 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         loss_c = nn.CrossEntropyLoss()(outs[name], labels)
                         # 论文中的loss_m
                         loss += args.lambda_c * loss_c
-                        print("总loss值",loss)
                 elif "ori_out" in name:
                     loss_ori = F.cross_entropy(outs[name], labels)
                     loss += loss_ori
