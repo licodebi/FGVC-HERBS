@@ -3,8 +3,8 @@ from typing import Union
 from torchvision.models.feature_extraction import get_graph_node_names
 
 # from .pim_module import pim_module
-from .pim_module import siandpi_module
-
+# from .pim_module import siandpi_module
+from .pim_module import siandpi_mlp_module
 
 """
 [Default Return]
@@ -238,7 +238,7 @@ def build_vit16(pretrained: str = "models/vit_base_patch16_224_in21k_miil.pth",
     # 将位置嵌入作为模型的参数，并赋值给 backbone.pos_embed
     backbone.pos_embed = torch.nn.Parameter(posemb)
 
-    return siandpi_module.PluginMoodel(backbone = backbone,
+    return siandpi_mlp_module.PluginMoodel(backbone = backbone,
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,

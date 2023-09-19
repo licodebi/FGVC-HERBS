@@ -29,15 +29,17 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
     total_loss = 0.0
     # 如果使用了fpn
     if args.use_fpn:
-        for i in range(1, 4):
+        for name in outs:
+            if "layer" not in name:
+                continue
             # 得到top-1的精确度
             # acc = top_k_corrects(outs["layer"+str(i)].mean(1), labels, tops=[1])["top-1"] / batch_size
             # # 将精确度转为百分比
             # acc = round(acc * 100, 2)
             # msg["train_acc/layer{}_acc".format(i)] = acc
             # 得到训练损失中每一层的损失
-            loss = F.cross_entropy(outs["layer"+str(i)].mean(1), labels)
-            msg["train_loss/layer{}_loss".format(i)] = loss.item()
+            loss = F.cross_entropy(outs[name].mean(1), labels)
+            msg["train_loss/layer{}_loss".format(name)] = loss.item()
             total_loss += loss.item()
             # gt_score_map = outs["layer"+str(i)].detach()
             # S = gt_score_map.size(1)

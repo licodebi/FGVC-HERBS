@@ -154,6 +154,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
         iterations = epoch * len(train_loader) + batch_id
         # 输入总迭代数，优化器以及lr衰减序列
         # 对当前迭代的学习率进行调整
+
         adjust_lr(iterations, optimizer, schedule)
         
         # temperature = (args.temperature - 1) * (get_lr(optimizer) / args.max_lr) + 1
@@ -194,7 +195,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         loss_b0 = 0.0
                 elif "part_encoded" in name:
                     contrast_loss = con_loss_new(outs[name], labels.view(-1))
-                    loss = loss+0.5 * contrast_loss
+                    loss = loss+contrast_loss
                 # 如果使用了选择器
                 elif "select_" in name:
                     if not args.use_selection:
