@@ -29,7 +29,9 @@ def cal_train_metrics(args, msg: dict, outs: dict, labels: torch.Tensor, batch_s
     total_loss = 0.0
     # 如果使用了fpn
     if args.use_fpn:
-        for i in range(1, 4):
+        for name in outs:
+            if "layer_" not in name:
+                continue
             # 得到top-1的精确度
             # acc = top_k_corrects(outs["layer"+str(i)].mean(1), labels, tops=[1])["top-1"] / batch_size
             # # 将精确度转为百分比
@@ -263,9 +265,10 @@ def evaluate(args, model, test_loader):
             outs = model(datas)
 
             if args.use_fpn:
-                for i in range(1, 5):
-                    this_name = "layer" + str(i)
-                    # _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
+                for name in outs:
+                    if "layer_" in name:
+                        this_name = name
+                        _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
 
                     # this_name = "FPN1_layer" + str(i)
                     # _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
@@ -280,8 +283,12 @@ def evaluate(args, model, test_loader):
                     S = outs[name].size(1)
                     logit = outs[name].view(-1, args.num_classes)
                     labels_1 = labels.unsqueeze(1).repeat(1, S).flatten(0)
-                    # _cal_evalute_metric(corrects, total_samples, logit, labels_1, this_name)
-                
+                    _cal_evalute_metric(corrects, total_samples, logit, labels_1, this_name)
+                for name in outs:
+                    if "part_encoded" in name:
+                        this_name = name
+                        _cal_evalute_metric(corrects, total_samples, outs[this_name], labels, this_name)
+
                 for name in outs:
                     if "drop_" not in name:
                         continue
