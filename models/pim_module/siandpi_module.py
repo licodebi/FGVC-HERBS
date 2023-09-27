@@ -628,7 +628,7 @@ class PluginMoodel(nn.Module):
         self.part_select = Part_Attention()
         self.part_structure=Part_Structure(self.fpn_size)
         self.part_norm = nn.LayerNorm(self.fpn_size, eps=1e-6)
-
+        self.mlp=Mlp(self.fpn_size,num_classes,512)
         gcn_inputs, gcn_proj_size = None, None
         total_num_selects = sum([num_selects[name] for name in num_selects])+len(num_selects) # sum
         # 设置图卷积聚合器
@@ -692,6 +692,8 @@ class PluginMoodel(nn.Module):
             j+=1
         # 使用聚合器
         comb_outs = self.combiner(selects)
+        token_class=self.mlp(part_encoded)
+        logits['token_class']=token_class
         logits['part_encoded']=part_encoded
         logits['comb_outs'] = comb_outs
         return logits

@@ -266,7 +266,7 @@ def evaluate(args, model, test_loader):
 
             if args.use_fpn:
                 for name in outs:
-                    if "layer_" in name:
+                    if "layer" in name and  "drop_" not in name:
                         this_name = name
                         _cal_evalute_metric(corrects, total_samples, outs[this_name].mean(1), labels, this_name, scores, score_names)
 
@@ -285,7 +285,7 @@ def evaluate(args, model, test_loader):
                     labels_1 = labels.unsqueeze(1).repeat(1, S).flatten(0)
                     _cal_evalute_metric(corrects, total_samples, logit, labels_1, this_name)
                 for name in outs:
-                    if "part_encoded" in name:
+                    if "token_class" in name:
                         this_name = name
                         _cal_evalute_metric(corrects, total_samples, outs[this_name], labels, this_name)
 
